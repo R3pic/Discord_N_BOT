@@ -45,6 +45,8 @@ class DataContainer:
         self.theme_list = self.reader.read_json_files_name()
     #파일이름입력 -> 해당하는 문제 리스트 반환
     def get_exam_list(self, file_name):
+        if file_name is None:
+            return None
         jsondata = self.reader.load_json_content(file_name + '.json')
         question_list = []
         for item in jsondata:

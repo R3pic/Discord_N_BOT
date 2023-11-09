@@ -1,24 +1,27 @@
 #
 # 1. 게임이 시작되고 방이 생성되면 30초 뒤 게임이 시작된다. OK
 # 2. 게임이 시작되면 게임방에 들어와 있는 인원을 참가자 리스트에 넣는다. OK
-# 3.1 30초가 지나면 !게임시작을 친 사람이 문제주제를 선택할 수 있게 한다. <----------TODO이거 해야돼!!!!!!!!!!!!!!
+# 3.1 30초가 지나면 !게임시작을 친 사람이 문제주제를 선택할 수 있게 한다.
 #     (버튼식)(다른사람도 볼 수 있지만 누르지는 못함)
 # 3.2 주제 선택을 한 뒤 게임시작을 누르면 진짜 시작, 
 #     주의사항(띄어쓰기 금지, 정답입력방법등, 정답은 게임채팅창에서만 입력하기등등) 출력후 문제가 출제된다.
 # 3.3 참가자 리스트에 존재하는 사람이 게임채팅창에 입력하면 정답입력메소드를 호출. 
-#      현재 문제번호와 답이 제출된다. Anwser(int currentMun, "플레이어가 입력함")
+#      답이 제출된다. Anwser("플레이어가 입력함")
 # 3.4 만약 정답과 같다면 현재문제 정답자 리스트에 추가. 만약 1번째면 3점, 2번째면 2점, 3번째면 1점추가.
 # 3.5 총 3명이 맞추면 다음문제로 넘어감
 # 3.6 또는 스킵 인원이 참가자 절반이 넘어가면 다음문제로 넘어감.
 #
+import time
+from typing import Any, Coroutine
 import discord
-import random
 import asyncio
 from Data import DataContainer
 from discord import Embed
 
 #상수
 ABLE_JOIN_TIME = 5
+TIME_OUT = 30
+ROOM_NAME = "-Game-"
 
 class Game:
     category_name = "NoNoBot-Games"
@@ -31,58 +34,97 @@ class Game:
         self.voice_channel = None
         self.player_List = []
         self.starterid = None
-        self.selectedTheme = None
+        self.selected_theme = None
         self.current_question_list = None
+        self.vc = None
         
     async def GameStart(self, ctx):
         #통화방 및 채팅방 생성
-        if(self.isGameReady):
+        if(self.isGameReady or self.isGameStart):
             await ctx.send(f"이미 게임이 진행중입니다! 통화방에서 {ctx.bot.user.name}을 찾아보세요!")
             return
-        
-        await self.Create_channel(ctx)
-        
-        await self.Choicetheme(ctx)
+        await self.__Create_channel(ctx)
+        if self.starterid is None:
+            await ctx.send(f"게임에 참가한 플레이어가 없습니다. 게임을 종료합니다.")
+            await self.__GameReset()
+            return
+        isPlayerSelect = await self.Choicetheme(ctx)
+        if not isPlayerSelect:
+            await self.__GameReset()
+            return
+        await self.ProgressGame(ctx)
 
-    async def Create_channel(self, ctx):
+    async def __Create_channel(self, ctx):
         self.isGameReady = True
         self.guild = ctx.guild
         exist_category = discord.utils.get(self.guild.categories, name=self.category_name)
+        
         if not exist_category:
             self.category = await ctx.guild.create_category(self.category_name)
-            self.text_channel = await ctx.guild.create_text_channel('-Game-', category=self.category)
-            self.voice_channel = await ctx.guild.create_voice_channel('-Game-', category=self.category)
-            print(f'Creating a new category: {self.category_name}')
+            self.text_channel = await ctx.guild.create_text_channel('game', category=self.category)
+            self.voice_channel = await ctx.guild.create_voice_channel(ROOM_NAME, category=self.category)
         else:
-            print(f'Category {self.category_name} already exists.')
+            self.category = discord.utils.get(self.guild.categories, name=self.category_name)
+            self.text_channel = discord.utils.get(self.category.text_channels, name='game')
+            self.voice_channel = discord.utils.get(self.category.voice_channels, name=ROOM_NAME)
+            await self.ClearRoom()
+            self.category = await ctx.guild.create_category(self.category_name)
+            self.text_channel = await ctx.guild.create_text_channel('game', category=self.category)
+            self.voice_channel = await ctx.guild.create_voice_channel(ROOM_NAME, category=self.category)
+
         self.vc = await self.voice_channel.connect()
-        await self.text_channel.send(f"게임이 시작되었습니다. {ABLE_JOIN_TIME}초 동안 <#{self.voice_channel.id}>에 입장할 수 있습니다.")
+        await ctx.send(f"게임이 시작되었습니다. {ABLE_JOIN_TIME}초 동안 <#{self.voice_channel.id}>에 입장할 수 있습니다.")
         await asyncio.sleep(ABLE_JOIN_TIME)
         overwrites = {self.guild.default_role: discord.PermissionOverwrite(connect=False)}
         await self.voice_channel.edit(overwrites=overwrites)
         overwrites = {self.guild.default_role: discord.PermissionOverwrite(send_messages=False)}
         await self.text_channel.edit(overwrites=overwrites)
-        if self.starterid == None:
-            print("유저가 없어 게임을 종료합니다.")
-            return
-        await self.text_channel.send(f"{ABLE_JOIN_TIME}초가 지났습니다. 이제 <#{self.voice_channel.id}>에 입장할 수 없습니다.")
+        await ctx.send(f"{ABLE_JOIN_TIME}초가 지났습니다. 이제 <#{self.voice_channel.id}>에 입장할 수 없습니다.")
         self.isGameStart = True
         self.isGameReady = False
 
+    #유저에게 주제 선택창 띄우고, 해당 주제를 로드함.
+    #저장되는 내용 self.current_question_list, self.selected_theme
+    #로드하지 않으면 False, 로드하면 True 반환
     async def Choicetheme(self, ctx):
         view = ThemeView(self.starterid)
         member = ctx.guild.get_member(self.starterid)
         display_name = member.display_name
-        embed = Embed(description=f"{display_name}", color=0xE5FFCC)
-        await self.text_channel.send(embed=embed, view=view)
+        embed=discord.Embed(title=f"방장은 {TIME_OUT}초 안에 주제를 선택하세요!", description="아래의 버튼을 눌러 주제를 선택하세요!", color=0xe6fedc)
+        embed.set_author(name=f"현재 방장 : {display_name}")
+        msg = await self.text_channel.send(embed=embed)
+        await self.text_channel.send(view=view)
+        countdown_task = asyncio.create_task(self.countdown(msg, embed))
         await view.wait()
+        countdown_task.cancel()
         #누른 버튼에서 문제리스트를 가져옴.
-        self.selectedTheme = view.get_selected_theme()
-        self.current_question_list = view.dataloader.get_exam_list(self.selectedTheme)
-        print(self.selectedTheme)
+        self.selected_theme = view.get_selected_theme()
+        self.current_question_list = view.dataloader.get_exam_list(self.selected_theme)
+        if self.current_question_list:
+            embed=discord.Embed(title=f"{self.selected_theme}을 선택하였습니다.", description="문제를 가져옵니다...", color=0xe6fedc)
+            await msg.edit(embed=embed)
+            return True
+        else:
+            embed=discord.Embed(title=f"방장이라는 사람이... 주제를 고르지 않았습니다..", description="곧 방이 사라집니다.", color=0xff0000)
+            await msg.edit(embed=embed)
+            return False
+            
+        
+    async def countdown(self, msg, embed):
+        start_time = time.time()  # 시작 시간
+        while True:
+            elapsed_time = time.time() - start_time  # 경과 시간
+            remaining_time = TIME_OUT - int(elapsed_time)  # 남은 시간
+            if remaining_time <= 0:
+                break
+            embed.title = f"방장은 {remaining_time}초 안에 주제를 선택하세요!"
+            await msg.edit(embed=embed)
+            await asyncio.sleep(1)  # 1초 대기
+
+    async def ProgressGame(self, ctx):
+        print(self.selected_theme)
         for a in self.current_question_list:
             print(a)
-        
         
     #플레이어 통화방 입장,퇴장 관리
     async def voice_state_Event(self, member, before, after):
@@ -90,12 +132,11 @@ class Game:
             channel = before.channel or after.channel
             if channel.id == self.voice_channel.id:
                 if before.channel is None and after.channel is not None:  # 사용자가 채널에 입장했는지 확인합니다.
-                    await self.PlayerJoin(member)
+                    await self.__PlayerJoin(member)
                 elif before.channel is not None and after.channel is None:  # 사용자가 채널에서 나갔는지 확인합니다.
-                    await self.PlayerExit(member)
-
+                    await self.__PlayerExit(member)
     #플레이어 입장메소드 -> Player_List에 추가
-    async def PlayerJoin(self,member):
+    async def __PlayerJoin(self,member):
         self.player_List.append(member.id)
         self.__set_Starter()
         print(f"현재 등록된 플레이어 : {self.player_List}, 현재 방장 : {self.starterid}")
@@ -103,7 +144,7 @@ class Game:
         embed.set_thumbnail(url=member.avatar.url)
         await self.text_channel.send(embed=embed)
     #플레이어 퇴장메소드 -> Player_List에서 삭제
-    async def PlayerExit(self,member):
+    async def __PlayerExit(self,member):
         self.player_List.remove(member.id)
         self.__set_Starter()
         print(f"현재 등록된 플레이어 : {self.player_List}, 현재 방장 : {self.starterid}")
@@ -120,10 +161,30 @@ class Game:
             return
         else:
             self.starterid = self.player_List[0]
-            
+    async def __GameReset(self):
+        await asyncio.sleep(5)
+        if self.vc:
+            self.vc = await self.vc.disconnect()
+        await self.ClearRoom()
+        self.__init__()
+    #개발용 메소드 꼭 지우기
+    async def DebugGameReset(self,ctx):
+        self.guild = ctx.guild
+        if self.vc:
+            self.vc = await self.vc.disconnect()
+        await self.ClearRoom()
+        self.__init__()
+
+    #방이 존재한다면 삭제.
+    async def ClearRoom(self):
+        category = discord.utils.get(self.guild.categories, name=self.category_name)
+        if category is not None:  # 카테고리가 존재하는 경우
+            for channel in category.channels:  # 카테고리 아래의 모든 채널에 대해
+                await channel.delete()  # 채널을 삭제합니다.
+            await category.delete()  # 마지막으로 카테고리를 삭제합니다.
             
 class ThemeView(discord.ui.View):
-    def __init__(self, starterid, timeout=30):
+    def __init__(self, starterid, timeout=TIME_OUT):
         super().__init__(timeout=timeout)
         self.starterid = starterid
         self.dataloader = DataContainer()
@@ -131,10 +192,7 @@ class ThemeView(discord.ui.View):
         self.selected_theme = None
         
         theme_list = self.dataloader.get_theme_list()
-
         for theme in theme_list:
-            if not theme:  # 테마가 빈 문자열이거나 None인 경우
-                print("Invalid theme found:", theme)
             button = ThemeButton(theme, self)
             self.add_item(button)
             self.button_list.append(button)
@@ -150,9 +208,9 @@ class ThemeButton(discord.ui.Button):
 
     async def callback(self, interaction):
         if interaction.user.id != self.theme_view.starterid:
-            msg = await interaction.response.send_message(f"{interaction.user.display_name}님은 방장이 아닙니다.")
-            await asyncio.sleep(2)
-            await msg.delete()
+            message = await interaction.channel.send(f"{interaction.user.display_name}님은 방장이 아닙니다.")
+            await asyncio.sleep(1)
+            await message.delete()
             return
         self.theme_view.selected_theme = self.label
         await interaction.response.send_message(f"{interaction.user.display_name}님이 {self.label}을 선택하였습니다.")

@@ -11,14 +11,13 @@ token = Config.TOKEN
 
 intents=discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="/", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 game = Game()
 
 
 @bot.event
 async def on_ready():
-    await Clear_room()
     print(f'{bot.user}이 활성화 되었습니다.')
     
 @bot.event
@@ -28,6 +27,11 @@ async def on_disconnect():
 @bot.command()
 async def 게임시작(ctx):
     await game.GameStart(ctx)
+
+@bot.command()
+async def 게임종료(ctx):
+    if ctx.author == ctx.guild.owner:
+        await game.DebugGameReset(ctx)
 
 @bot.event
 async def on_voice_state_update(member, before, after):
@@ -46,15 +50,15 @@ async def on_message(message):
             await message.channel.send(a + '가 나왔는데요..')
         await bot.process_commands(message)
 
-#현재 생성된 게임이 존재할경우 삭제한다.
-async def Clear_room():
-    guild = bot.guilds[0]  # 봇이 연결된 첫 번째 서버를 선택합니다. 필요에 따라 이 부분을 수정하세요.
-    category_name = game.category_name  #삭제하려는 카테고리 이름.
-    category = get(guild.categories, name=category_name)
-    if category is not None:  # 카테고리가 존재하는 경우
-        for channel in category.channels:  # 카테고리 아래의 모든 채널에 대해
-            await channel.delete()  # 채널을 삭제합니다.
-        await category.delete()  # 마지막으로 카테고리를 삭제합니다.
+# #현재 생성된 게임이 존재할경우 삭제한다.
+# async def Clear_room():
+#     guild = bot.guilds[0]  # 봇이 연결된 첫 번째 서버를 선택합니다. 필요에 따라 이 부분을 수정하세요.
+#     category_name = game.category_name  #삭제하려는 카테고리 이름.
+#     category = get(guild.categories, name=category_name)
+#     if category is not None:  # 카테고리가 존재하는 경우
+#         for channel in category.channels:  # 카테고리 아래의 모든 채널에 대해
+#             await channel.delete()  # 채널을 삭제합니다.
+#         await category.delete()  # 마지막으로 카테고리를 삭제합니다.
     
 
 bot.run(token)
