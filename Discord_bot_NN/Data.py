@@ -15,20 +15,25 @@ class Question:
         self.url = url
         self.correct_answer = correct_answer
         self.desc = desc
+        self.starttime = "0"
     
     def __str__(self):
         return f'Url: {self.url}, CorrectAnswer: {self.correct_answer}, desc: {self.desc}'
     
-    def AnwserCheck(self, anwser):
-        if anwser in self.correct_answer:
+    def AnwserCheck(self, answer :str) -> bool:
+        ori_answer = answer.replace(' ', '').lower()
+        if ori_answer in self.correct_answer:
             return True
         else:
+            print(str(ori_answer), self.correct_answer)
             return False
         
-    def Getdesc(self):
+    def Getdesc(self) -> str:
         return self.desc
-    def GetUrl(self):
+    def GetUrl(self) -> str:
         return self.url
+    def GetStarttime(self) -> str:
+        return self.starttime
 
 #json을 실제로 읽고 반환하는 클래스.
 class DataReader:
