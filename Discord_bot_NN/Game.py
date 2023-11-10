@@ -25,11 +25,13 @@ ROOM_NAME = "-Game-"
 
 class Game:
     category_name = "NoNoBot-Games"
-    def __init__(self) -> None:
+    def __init__(self, bot) -> None:
+        self.bot = bot
         self.isGameStart = False
         self.isGameReady = False
         self.category_name = "NoNoBot-Games"
         self.category = None
+        self.guild = None
         self.text_channel = None
         self.voice_channel = None
         self.player_List = []
@@ -45,14 +47,18 @@ class Game:
             return
         await self.__Create_channel(ctx)
         if self.starterid is None:
-            await ctx.send(f"게임에 참가한 플레이어가 없습니다. 게임을 종료합니다.")
+            try :
+                await ctx.send(f"게임에 참가한 플레이어가 없습니다. 게임을 종료합니다.")
+            except:
+                await self.text_channel.send(f"게임에 참가한 플레이어가 없습니다. 게임을 종료합니다.")
             await self.__GameReset()
             return
         isPlayerSelect = await self.Choicetheme(ctx)
         if not isPlayerSelect:
             await self.__GameReset()
             return
-        await self.ProgressGame(ctx)
+        print(self.isGameStart)
+        await self.ProgressGame(self.bot)
 
     async def __Create_channel(self, ctx):
         self.isGameReady = True
@@ -67,21 +73,29 @@ class Game:
             self.category = discord.utils.get(self.guild.categories, name=self.category_name)
             self.text_channel = discord.utils.get(self.category.text_channels, name='game')
             self.voice_channel = discord.utils.get(self.category.voice_channels, name=ROOM_NAME)
+            print(self.category.id, self.text_channel.id, self.voice_channel.id)
             await self.ClearRoom()
             self.category = await ctx.guild.create_category(self.category_name)
             self.text_channel = await ctx.guild.create_text_channel('game', category=self.category)
             self.voice_channel = await ctx.guild.create_voice_channel(ROOM_NAME, category=self.category)
+            print(self.category.id, self.text_channel.id, self.voice_channel.id)
 
         self.vc = await self.voice_channel.connect()
-        await ctx.send(f"게임이 시작되었습니다. {ABLE_JOIN_TIME}초 동안 <#{self.voice_channel.id}>에 입장할 수 있습니다.")
+        try:
+            await ctx.send(f"게임이 시작되었습니다. {ABLE_JOIN_TIME}초 동안 <#{self.voice_channel.id}>에 입장할 수 있습니다.")
+        except:
+            await self.text_channel.send(f"게임이 시작되었습니다. {ABLE_JOIN_TIME}초 동안 <#{self.voice_channel.id}>에 입장할 수 있습니다.")
+
         await asyncio.sleep(ABLE_JOIN_TIME)
         overwrites = {self.guild.default_role: discord.PermissionOverwrite(connect=False)}
         await self.voice_channel.edit(overwrites=overwrites)
         overwrites = {self.guild.default_role: discord.PermissionOverwrite(send_messages=False)}
         await self.text_channel.edit(overwrites=overwrites)
-        await ctx.send(f"{ABLE_JOIN_TIME}초가 지났습니다. 이제 <#{self.voice_channel.id}>에 입장할 수 없습니다.")
-        self.isGameStart = True
-        self.isGameReady = False
+        try:
+            await ctx.send(f"{ABLE_JOIN_TIME}초가 지났습니다. 이제 <#{self.voice_channel.id}>에 입장할 수 없습니다.")
+        except:
+            await self.text_channel.send(f"게임이 시작되었습니다. {ABLE_JOIN_TIME}초 동안 <#{self.voice_channel.id}>에 입장할 수 있습니다.")
+        
 
     #유저에게 주제 선택창 띄우고, 해당 주제를 로드함.
     #저장되는 내용 self.current_question_list, self.selected_theme
@@ -100,6 +114,8 @@ class Game:
         #누른 버튼에서 문제리스트를 가져옴.
         self.selected_theme = view.get_selected_theme()
         self.current_question_list = view.dataloader.get_exam_list(self.selected_theme)
+        self.isGameStart = True
+        self.isGameReady = False
         if self.current_question_list:
             embed=discord.Embed(title=f"{self.selected_theme}을 선택하였습니다.", description="문제를 가져옵니다...", color=0xe6fedc)
             await msg.edit(embed=embed)
@@ -109,7 +125,7 @@ class Game:
             await msg.edit(embed=embed)
             return False
             
-        
+    #카운트다운 1초마다 embad변경시킴.
     async def countdown(self, msg, embed):
         start_time = time.time()  # 시작 시간
         while True:
@@ -121,14 +137,30 @@ class Game:
             await msg.edit(embed=embed)
             await asyncio.sleep(1)  # 1초 대기
 
-    async def ProgressGame(self, ctx):
-        print(self.selected_theme)
-        for a in self.current_question_list:
-            print(a)
+    async def ProgressGame(self, bot):
+        question_list_len = len(self.current_question_list)
+        for i in range(question_list_len):
+            try:    
+                question = self.current_question_list[i]
+                
+                def check(m):
+                    if m.channel == self.text_channel and m.author.id in self.player_List and not m.content.startswith('/'):
+                        return question.AnwserCheck(m.content)
+
+                embed = discord.Embed(title=f"남은 문제 갯수 : {question_list_len - i}/{question_list_len}", description=f"{question.url}...", color=0xe6fedc)
+                await self.text_channel.send(embed=embed)
+                message = await bot.wait_for('message', check=check, timeout=10)
+                await self.text_channel.send(f'{message.author}가  {message.content}라고 정답을 외쳤다')
+            except:
+                await self.text_channel.send(f'시간이 초과되었습니다. 다음 문제로 넘어갑니다. 정답 : {question.correct_answer[0]}')
+            
+            if i < question_list_len - 1:
+                await self.text_channel.send('다음 문제로 넘어갑니다.')
+    
         
     #플레이어 통화방 입장,퇴장 관리
     async def voice_state_Event(self, member, before, after):
-        if not member.bot:
+        if not member.bot and self.isGameReady:
             channel = before.channel or after.channel
             if channel.id == self.voice_channel.id:
                 if before.channel is None and after.channel is not None:  # 사용자가 채널에 입장했는지 확인합니다.
@@ -137,20 +169,22 @@ class Game:
                     await self.__PlayerExit(member)
     #플레이어 입장메소드 -> Player_List에 추가
     async def __PlayerJoin(self,member):
-        self.player_List.append(member.id)
-        self.__set_Starter()
-        print(f"현재 등록된 플레이어 : {self.player_List}, 현재 방장 : {self.starterid}")
-        embed = Embed(description=f"{member.mention}님이 입장하셨습니다.", color=0xE5FFCC)
-        embed.set_thumbnail(url=member.avatar.url)
-        await self.text_channel.send(embed=embed)
+        if member.id not in self.player_List:
+            self.player_List.append(member.id)
+            self.__set_Starter()
+            print(f"현재 등록된 플레이어 : {self.player_List}, 현재 방장 : {self.starterid}")
+            embed = Embed(description=f"{member.mention}님이 입장하셨습니다.", color=0xE5FFCC)
+            embed.set_thumbnail(url=member.avatar.url)
+            await self.text_channel.send(embed=embed)
     #플레이어 퇴장메소드 -> Player_List에서 삭제
     async def __PlayerExit(self,member):
-        self.player_List.remove(member.id)
-        self.__set_Starter()
-        print(f"현재 등록된 플레이어 : {self.player_List}, 현재 방장 : {self.starterid}")
-        embed = Embed(description=f"{member.mention}님이 퇴장하셨습니다.", color=0xFF1300)
-        embed.set_thumbnail(url=member.avatar.url)
-        await self.text_channel.send(embed=embed)
+        if self.player_List:
+            self.player_List.remove(member.id)
+            self.__set_Starter()
+            print(f"현재 등록된 플레이어 : {self.player_List}, 현재 방장 : {self.starterid}")
+            embed = Embed(description=f"{member.mention}님이 퇴장하셨습니다.", color=0xFF1300)
+            embed.set_thumbnail(url=member.avatar.url)
+            await self.text_channel.send(embed=embed)
     #방장 설정하기.
     def __set_Starter(self):
         if not self.player_List:
@@ -173,7 +207,7 @@ class Game:
         if self.vc:
             self.vc = await self.vc.disconnect()
         await self.ClearRoom()
-        self.__init__()
+        self.__init__(self.bot)
 
     #방이 존재한다면 삭제.
     async def ClearRoom(self):

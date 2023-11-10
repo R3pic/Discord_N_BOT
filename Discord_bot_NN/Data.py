@@ -18,6 +18,17 @@ class Question:
     
     def __str__(self):
         return f'Url: {self.url}, CorrectAnswer: {self.correct_answer}, desc: {self.desc}'
+    
+    def AnwserCheck(self, anwser):
+        if anwser in self.correct_answer:
+            return True
+        else:
+            return False
+        
+    def Getdesc(self):
+        return self.desc
+    def GetUrl(self):
+        return self.url
 
 #json을 실제로 읽고 반환하는 클래스.
 class DataReader:
