@@ -11,14 +11,14 @@ import os
 DATA_PATH = "Discord_bot_NN\data"
 
 class Question:
-    def __init__(self, url, correct_answer, desc):
+    def __init__(self, url, correct_answer, desc, starttime):
         self.url = url
         self.correct_answer = correct_answer
         self.desc = desc
-        self.starttime = "0"
+        self.starttime = starttime
     
     def __str__(self):
-        return f'Url: {self.url}, CorrectAnswer: {self.correct_answer}, desc: {self.desc}'
+        return f'Url: {self.url}, CorrectAnswer: {self.correct_answer}, desc: {self.desc}, time: {self.starttime}'
     
     def AnwserCheck(self, answer :str) -> bool:
         ori_answer = answer.replace(' ', '').lower()
@@ -66,21 +66,22 @@ class DataContainer:
         jsondata = self.reader.load_json_content(file_name + '.json')
         question_list = []
         for item in jsondata:
-            question = Question(item['Url'], item['CorrectAnswer'], item['Desc'])
+            start_time = item.get('StartTime', "0")
+            question = Question(item['Url'], item['CorrectAnswer'], item['Desc'], start_time)
             question_list.append(question)
         return question_list
     #로드된 파일 이름 리스트 반환
     def get_theme_list(self)-> list:
         return self.theme_list
     
-# data = DataContainer()
+data = DataContainer()
 
-# list = data.get_theme_list()
-# for data in list:
-#     print(f"{data} 이건됨")
+list = data.get_theme_list()
+for data in list:
+    print(f"{data} 이건됨")
     
-# data = DataContainer()
+data = DataContainer()
     
-# exlist = data.get_exam_list("애니메이션")
-# for dataa in exlist:
-#     print(dataa)
+exlist = data.get_exam_list("한국")
+for dataa in exlist:
+    print(dataa)

@@ -30,12 +30,12 @@ QUIZ_TIME = 40
 ROOM_NAME = "-Game-"
 
 class Game:
-    category_name = "NoNoBot-Games"
+    category_name = "Bot-Games"
     def __init__(self, bot) -> None:
         self.bot = bot
         self.isGameStart = False
         self.isGameReady = False
-        self.category_name = "NoNoBot-Games"
+        self.category_name = "Bot-Games"
         self.category = None
         self.guild = None
         self.text_channel = None
@@ -131,6 +131,9 @@ class Game:
         if self.current_question_list:
             embed=discord.Embed(title=f"{self.selected_theme}을 선택하였습니다.", description="문제를 가져옵니다...", color=0xe6fedc)
             await msg.edit(embed=embed)
+            embed = discord.Embed(title=f"노래 듣고 맞추기 ({self.selected_theme})",
+                      description=f"> 주의사항\n```\n1. 모든 정답은 **띄어쓰기** 없이 입력하세요. \n2. 영어제목의 경우 영어로 써도 되고 발음으로 써도 됩니다.\n3. 한문제당 {QUIZ_TIME}초의 시간이 주어집니다.\n4. \"/\"기호는 사용하지 마세요.\n```",
+                      colour=0x00b0f4)
             return True
         else:
             embed=discord.Embed(title=f"방장이라는 사람이... 주제를 고르지 않았습니다..", description="곧 방이 사라집니다.", color=0xff0000)
@@ -172,6 +175,8 @@ class Game:
 
     async def ProgressGame(self, bot):
         question_list_len = len(self.current_question_list)
+        overwrites = {self.guild.default_role: discord.PermissionOverwrite(send_messages=True)}
+        await self.text_channel.edit(overwrites=overwrites)
         #플레이어 ID리스트를 Player 객체로 변환한 게임참가 확정리스트 (점수관리용)
         player_List = []
         #현재 통화방에서 플레이어 객체를 생성하고 리스트화.
@@ -184,7 +189,7 @@ class Game:
         
         for i in range(question_list_len):
             question = self.current_question_list[i]
-            url = "https://www.youtube.com/watch?v="+question.GetUrl()+"&t="+question.GetStarttime()
+            url = "https://www.youtube.com/watch?v="+question.GetUrl()+"&t="+question.GetStarttime()+"s"
             self.__Music_Start(url)
             try:
                 def check(m):
@@ -202,9 +207,9 @@ class Game:
                 
                 message = await bot.wait_for('message', check=check, timeout=QUIZ_TIME)
                 scoremanager.Correct(message.author.id)
-                await self.text_channel.send(f'{message.author}님, 정답입니다!')
+                await self.text_channel.send(f'{message.author}님, 정답입니다!\n 정답 : **{question.Getdesc()}**')
             except asyncio.TimeoutError:
-                await self.text_channel.send(f'시간이 초과되었습니다. 다음 문제로 넘어갑니다. 정답 : {question.correct_answer[0]}')
+                await self.text_channel.send(f'시간이 초과되었습니다. 다음 문제로 넘어갑니다. 정답 : **{question.Getdesc()}**')
             
             if i < question_list_len - 1:
                 await self.text_channel.send('다음 문제로 넘어갑니다.')
