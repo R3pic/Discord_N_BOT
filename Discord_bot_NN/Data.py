@@ -73,15 +73,3 @@ class DataContainer:
     #로드된 파일 이름 리스트 반환
     def get_theme_list(self)-> list:
         return self.theme_list
-    
-data = DataContainer()
-
-list = data.get_theme_list()
-for data in list:
-    print(f"{data} 이건됨")
-    
-data = DataContainer()
-    
-exlist = data.get_exam_list("한국")
-for dataa in exlist:
-    print(dataa)

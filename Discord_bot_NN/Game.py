@@ -63,8 +63,9 @@ class Game:
         if not isPlayerSelect:
             await self.__GameReset()
             return
-        print(self.isGameStart)
         await self.ProgressGame(self.bot)
+        asyncio.sleep(30)
+        self.__GameReset()
 
     async def __Create_channel(self, ctx):
         self.isGameReady = True
@@ -79,16 +80,14 @@ class Game:
             self.category = discord.utils.get(self.guild.categories, name=self.category_name)
             self.text_channel = discord.utils.get(self.category.text_channels, name='game')
             self.voice_channel = discord.utils.get(self.category.voice_channels, name=ROOM_NAME)
-            print(self.category.id, self.text_channel.id, self.voice_channel.id)
             await self.ClearRoom()
             self.category = await ctx.guild.create_category(self.category_name)
             self.text_channel = await ctx.guild.create_text_channel('game', category=self.category)
             self.voice_channel = await ctx.guild.create_voice_channel(ROOM_NAME, category=self.category)
-            print(self.category.id, self.text_channel.id, self.voice_channel.id)
 
         self.vc = await self.voice_channel.connect()
         bgm = "https://www.youtube.com/watch?v=Yb-rLsCpBvI"
-        self.__Music_Start(bgm)
+        self.__Music_Start(bgm, 0)
         try:
             await ctx.send(f"게임이 시작되었습니다. {ABLE_JOIN_TIME}초 동안 <#{self.voice_channel.id}>에 입장할 수 있습니다.")
         except:
@@ -122,6 +121,7 @@ class Game:
         countdown_task.cancel()
         if self.vc and self.vc.is_playing():
             self.vc.stop()
+            time.sleep(1)
         #누른 버튼에서 문제리스트를 가져옴.
         self.selected_theme = view.get_selected_theme()
         self.current_question_list = view.dataloader.get_exam_list(self.selected_theme)
@@ -134,6 +134,7 @@ class Game:
             embed = discord.Embed(title=f"노래 듣고 맞추기 ({self.selected_theme})",
                       description=f"> 주의사항\n```\n1. 모든 정답은 **띄어쓰기** 없이 입력하세요. \n2. 영어제목의 경우 영어로 써도 되고 발음으로 써도 됩니다.\n3. 한문제당 {QUIZ_TIME}초의 시간이 주어집니다.\n4. \"/\"기호는 사용하지 마세요.\n```",
                       colour=0x00b0f4)
+            await self.text_channel.send(embed=embed)
             return True
         else:
             embed=discord.Embed(title=f"방장이라는 사람이... 주제를 고르지 않았습니다..", description="곧 방이 사라집니다.", color=0xff0000)
@@ -152,7 +153,7 @@ class Game:
             await msg.edit(embed=embed)
             await asyncio.sleep(1)  # 1초 대기
     #Url을 받아 해당하는 노래를 틀어줌.    
-    def __Music_Start(self, url):
+    def __Music_Start(self, url, start_time):
         ydl_opts = {
                 'format': 'bestaudio/best',
                 'postprocessors': [{
@@ -164,13 +165,14 @@ class Game:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             url2 = info['url']
-            self.audio_source = discord.FFmpegOpusAudio(url2)
+            self.audio_source = discord.FFmpegOpusAudio(url2, options=f'-ss {start_time}')
             self.vc.play(self.audio_source)
 
     def __Music_Stop(self):
         if self.vc and self.vc.is_playing():
             self.vc.stop()
             if self.audio_source:  # If audio source exists
+                print("오디오소스정리함")
                 self.audio_source.cleanup()  # Clean up the audio source
 
     async def ProgressGame(self, bot):
@@ -189,8 +191,9 @@ class Game:
         
         for i in range(question_list_len):
             question = self.current_question_list[i]
-            url = "https://www.youtube.com/watch?v="+question.GetUrl()+"&t="+question.GetStarttime()+"s"
-            self.__Music_Start(url)
+            start_time = question.GetStarttime()
+            url = "https://www.youtube.com/watch?v="+question.GetUrl()
+            self.__Music_Start(url, start_time)
             try:
                 def check(m):
                     if m.channel == self.text_channel and m.author.id in self.player_id_list and not m.content.startswith('/'):
@@ -199,7 +202,7 @@ class Game:
                 hightier = scoremanager.Gethightier()
                 
                 embed = discord.Embed(title=f"주제 : {self.selected_theme}",
-                      description=f"> **현재 순위**\n```\n1. {hightier[0]}점\n2. {hightier[1]}점\n3. {hightier[2]}점\n```아 이거 들어봤는데",
+                      description=f"> **현재 순위**\n```\n1. {hightier[0]}점\n2. {hightier[1]}점\n3. {hightier[2]}점\n```__아 이거 들어봤는데__",
                       colour=0xccfff0)
                 embed.set_author(name=f"{self.supermember.display_name}님이 방장입니다.", icon_url=f"{self.supermember.avatar.url}")
                 embed.set_footer(text=f"문제 : {question_list_len - i} /  {question_list_len}")
@@ -207,7 +210,7 @@ class Game:
                 
                 message = await bot.wait_for('message', check=check, timeout=QUIZ_TIME)
                 scoremanager.Correct(message.author.id)
-                await self.text_channel.send(f'{message.author}님, 정답입니다!\n 정답 : **{question.Getdesc()}**')
+                await self.text_channel.send(f'**{message.author}**님, 정답입니다!\n정답 : **{question.Getdesc()}**')
             except asyncio.TimeoutError:
                 await self.text_channel.send(f'시간이 초과되었습니다. 다음 문제로 넘어갑니다. 정답 : **{question.Getdesc()}**')
             
@@ -289,7 +292,7 @@ class Game:
             await category.delete()  # 마지막으로 카테고리를 삭제합니다.
             
 
-
+#주제선택 뷰
 class ThemeView(discord.ui.View):
     def __init__(self, starterid, timeout=TIME_OUT):
         super().__init__(timeout=timeout)
@@ -315,7 +318,7 @@ class ThemeButton(discord.ui.Button):
 
     async def callback(self, interaction):
         if interaction.user.id != self.theme_view.starterid:
-            message = await interaction.channel.send(f"{interaction.user.display_name}님은 방장이 아닙니다.")
+            message = await interaction.channel.send(f"!!! **{interaction.user.display_name}님은 방장이 아닙니다.**")
             await asyncio.sleep(1)
             await message.delete()
             return
